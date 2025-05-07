@@ -1,0 +1,305 @@
+```{r}
+
+# 01. LOAD LIBRARIES 
+# Load all necessary libraries for data wrangling, modeling, and visualization
+library(tidyverse)
+library(caret)
+library(ranger)
+library(pROC)
+library(FactoMineR)
+library(factoextra)
+library(DMwR)
+library(xgboost)
+library(survival)
+library(survminer)
+library(pheatmap)
+library(ggrepel)
+library(ComplexUpset)
+
+
+# ===================== 02. LOAD & CLEAN DATA =====================
+# Load METABRIC data
+raw_data <- read.csv("C:/Users/deepa/Downloads/archive/METABRIC_RNA_Mutation.csv")
+data <- raw_data
+
+# Create binary outcome variable based on survival status
+data$death_from_cancer <- factor(ifelse(data$overall_survival == 0, "YES", "NO"), levels = c("NO", "YES"))
+
+# Create binary mutation label for TP53
+data$tp53_mut_binary <- factor(ifelse(data$tp53_mut != "0" & data$tp53_mut != 0, "Mutated", "Not Mutated"))
+
+# Convert treatments to factors
+data <- data %>% mutate(
+  chemotherapy = factor(ifelse(chemotherapy == 1, "Received", "Not Received")),
+  hormone_therapy = factor(ifelse(hormone_therapy == 1, "Received", "Not Received")),
+  radio_therapy = factor(ifelse(radio_therapy == 1, "Received", "Not Received"))
+)
+
+# Remove columns with >30% missing values
+threshold <- 0.3 * nrow(data)
+data <- data[, colSums(is.na(data)) < threshold]
+
+# Impute missing values
+getmode <- function(v) unique(v[which.max(tabulate(match(v, v)))])
+data <- data %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
+  mutate(across(where(is.character), ~ factor(ifelse(is.na(.), getmode(.), .))))
+
+
+# 03. PCA ON GENE EXPRESSION 
+# Perform PCA to reduce dimensionality of gene expression data
+expr_cols <- setdiff(names(data), c("patient_id", "overall_survival", "overall_survival_months", "death_from_cancer"))
+expr_data <- data[, expr_cols] %>% select(where(is.numeric))
+expr_data_scaled <- scale(expr_data)
+pca_res <- PCA(as.data.frame(expr_data_scaled), graph = FALSE)
+pca_scores <- as.data.frame(pca_res$ind$coord[, 1:5])
+colnames(pca_scores) <- paste0("PC", 1:5)
+data <- bind_cols(data, pca_scores)
+
+
+# 04. MODELING PREPARATION
+# Select modeling variables
+model_vars <- c("death_from_cancer", "age_at_diagnosis", "tumor_stage", "chemotherapy",
+                "hormone_therapy", "radio_therapy", "tumor_size", "tp53_mut_binary", "PC1", "PC2")
+rf_data <- data[, model_vars] %>% drop_na()
+
+# Apply SMOTE to handle class imbalance
+set.seed(42)
+rf_data_balanced <- SMOTE(death_from_cancer ~ ., data = rf_data, perc.over = 100, perc.under = 150)
+
+# Train-test split
+train_index <- createDataPartition(rf_data_balanced$death_from_cancer, p = 0.8, list = FALSE)
+train_data <- rf_data_balanced[train_index, ]
+test_data <- rf_data_balanced[-train_index, ]
+
+
+# 05. MODEL TRAINING & EVALUATION 
+# Logistic Regression
+log_model <- glm(death_from_cancer ~ ., data = train_data, family = "binomial")
+test_data$tp53_mut_binary <- factor(test_data$tp53_mut_binary, levels = levels(train_data$tp53_mut_binary))
+log_preds_prob <- predict(log_model, newdata = test_data, type = "response")
+log_preds <- factor(ifelse(log_preds_prob > 0.5, "YES", "NO"), levels = c("NO", "YES"))
+roc_log <- roc(test_data$death_from_cancer, log_preds_prob)
+# Logistic Regression Confusion Matrix
+cat("Confusion Matrix: Logistic Regression\n")
+print(confusionMatrix(log_preds, test_data$death_from_cancer))
+
+
+# Random Forest
+rf_model <- ranger(death_from_cancer ~ ., data = train_data, num.trees = 500, probability = TRUE, importance = "permutation")
+rf_preds_prob <- predict(rf_model, data = test_data)$predictions[, "YES"]
+rf_preds <- factor(ifelse(rf_preds_prob > 0.5, "YES", "NO"), levels = c("NO", "YES"))
+roc_rf <- roc(test_data$death_from_cancer, rf_preds_prob)
+# Random Forest Confusion Matrix
+cat("Confusion Matrix: Random Forest\n")
+print(confusionMatrix(rf_preds, test_data$death_from_cancer))
+
+
+# XGBoost
+xgb_train <- xgb.DMatrix(data = model.matrix(death_from_cancer ~ . - 1, data = train_data), label = as.numeric(train_data$death_from_cancer) - 1)
+xgb_test <- xgb.DMatrix(data = model.matrix(death_from_cancer ~ . - 1, data = test_data))
+xgb_model <- xgboost(data = xgb_train, nrounds = 100, objective = "binary:logistic", verbose = 0)
+xgb_preds_prob <- predict(xgb_model, newdata = xgb_test)
+xgb_preds <- factor(ifelse(xgb_preds_prob > 0.5, "YES", "NO"), levels = c("NO", "YES"))
+roc_xgb <- roc(test_data$death_from_cancer, xgb_preds_prob)
+# XGBoost Confusion Matrix
+cat("Confusion Matrix: XGBoost\n")
+print(confusionMatrix(xgb_preds, test_data$death_from_cancer))
+
+
+# AUC Summary Table
+auc_df <- data.frame(
+  Model = c("Logistic Regression", "Random Forest", "XGBoost"),
+  AUC = c(auc(roc_log), auc(roc_rf), auc(roc_xgb))
+)
+cat("Model AUC Comparison Table:\n")
+print(auc_df)
+
+
+
+# 06. PERFORMANCE VISUALIZATION 
+# Plot ROC Curves
+plot(roc_rf, col = "blue", main = "ROC Curves")
+plot(roc_log, add = TRUE, col = "red")
+plot(roc_xgb, add = TRUE, col = "green")
+legend("bottomright", legend = c("Random Forest", "LogReg", "XGBoost"), col = c("blue", "red", "green"), lty = 1)
+
+
+# 07. INTERPRETIVE PLOTS 
+# Visualize categorical therapy features vs death outcome
+therapies <- c("chemotherapy", "hormone_therapy", "radio_therapy")
+for (therapy in therapies) {
+  print(
+    ggplot(data, aes_string(x = therapy, fill = "death_from_cancer")) +
+      geom_bar(position = "dodge") +
+      labs(title = paste("Death Outcome by", therapy), x = "Therapy", y = "Count") +
+      theme_minimal()
+  )
+}
+
+# PC1 vs Death Outcome
+ggplot(data, aes(x = death_from_cancer, y = PC1, fill = death_from_cancer)) +
+  geom_boxplot() +
+  labs(title = "PC1 (Gene Expression) vs Death Outcome", y = "PC1 Score", x = "Outcome") +
+  theme_minimal()
+
+# Age vs Death Outcome
+ggplot(data, aes(x = death_from_cancer, y = age_at_diagnosis, fill = death_from_cancer)) +
+  geom_boxplot() +
+  labs(title = "Age at Diagnosis vs Death Outcome", y = "Age at Diagnosis", x = "Outcome") +
+  theme_minimal()
+
+# Tumor size vs Death Outcome
+ggplot(data, aes(x = death_from_cancer, y = tumor_size, fill = death_from_cancer)) +
+  geom_boxplot() +
+  labs(title = "Tumor Size vs Death Outcome", y = "Tumor Size (mm)", x = "Outcome") +
+  theme_minimal()
+
+# Tumor stage barplot
+ggplot(data, aes(x = as.factor(tumor_stage), fill = death_from_cancer)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Tumor Stage vs Death Outcome", x = "Tumor Stage", y = "Count") +
+  theme_minimal()
+
+
+# 08. VIOLIN + BOXPLOT
+# Visualize distribution of gene expression across death outcomes
+genes <- c("tp53", "brca1", "brca2", "pik3ca")
+for (g in genes) {
+  print(
+    ggplot(data, aes_string(x = "death_from_cancer", y = g, fill = "death_from_cancer")) +
+      geom_violin(trim = FALSE, alpha = 0.7) +
+      geom_boxplot(width = 0.1, outlier.shape = NA) +
+      labs(title = paste(toupper(g), "Expression by Death Outcome"),
+           y = paste0(toupper(g), " Expression Level"), x = "Outcome") +
+      theme_minimal(base_size = 14)
+  )
+}
+
+# Define a generic plotting function
+plot_top10_mutations <- function(df, gene_col, gene_label) {
+  # Filter mutated rows (non-"0") and standardize death outcome
+  gene_df <- df %>%
+    filter(.data[[gene_col]] != "0" & !is.na(.data[[gene_col]])) %>%
+    mutate(death_from_cancer = factor(ifelse(overall_survival == 0, "Deceased", "Alive")))
+
+  # Get top 10 mutations
+  top_variants <- gene_df %>%
+    count(.data[[gene_col]], sort = TRUE) %>%
+    slice_head(n = 10) %>%
+    pull(1)
+
+  # Filter for top mutations only
+  gene_top_df <- gene_df %>%
+    filter(.data[[gene_col]] %in% top_variants)
+
+  # Plot
+  ggplot(gene_top_df, aes(x = .data[[gene_col]], fill = death_from_cancer)) +
+    geom_bar(position = "dodge") +
+    labs(
+      title = paste("Top 10", gene_label, "Mutation Variants and Death Outcome"),
+      x = paste(gene_label, "Variant"), y = "Patient Count", fill = "Outcome"
+    ) +
+    theme_minimal(base_size = 14) +
+    scale_fill_manual(values = c("Alive" = "#00BFC4", "Deceased" = "#F8766D")) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+# Run for each gene
+plot_top10_mutations(data, "tp53_mut", "TP53")
+plot_top10_mutations(data, "brca1_mut", "BRCA1")
+plot_top10_mutations(data, "brca2_mut", "BRCA2")
+plot_top10_mutations(data, "pik3ca_mut", "PIK3CA")
+
+# 09. PCA SCATTER
+ggplot(data, aes(x = PC1, y = PC2, color = death_from_cancer)) +
+  geom_point(alpha = 0.7, size = 2) +
+  labs(title = "PCA of Gene Expression – PC1 vs PC2", x = "Principal Component 1", y = "Principal Component 2") +
+  theme_minimal(base_size = 14)
+
+
+# 10. VOLCANO PLOT 
+# Calculate differential expression between alive vs deceased patients
+meta_vars <- c("patient_id", "overall_survival", "overall_survival_months",
+               "death_from_cancer", "age_at_diagnosis", "tumor_stage",
+               "chemotherapy", "hormone_therapy", "radio_therapy",
+               "tp53_mut", "tp53_mut_binary", "brca1_mut", "brca2_mut", 
+               "pik3ca_mut", "tumor_size", "PC1", "PC2")
+expr_cols <- data %>% select(where(is.numeric)) %>% select(-any_of(meta_vars))
+alive <- data %>% filter(death_from_cancer == "NO") %>% select(all_of(colnames(expr_cols)))
+deceased <- data %>% filter(death_from_cancer == "YES") %>% select(all_of(colnames(expr_cols)))
+volcano_data <- data.frame(Gene = colnames(expr_cols))
+volcano_data$log2FC <- sapply(colnames(expr_cols), function(gene) {
+  log2(mean(deceased[[gene]], na.rm = TRUE) + 1) - log2(mean(alive[[gene]], na.rm = TRUE) + 1)
+})
+volcano_data$pval <- sapply(colnames(expr_cols), function(gene) {
+  t.test(deceased[[gene]], alive[[gene]])$p.value
+})
+volcano_data$neglog10pval <- -log10(volcano_data$pval)
+volcano_data$significant <- ifelse(volcano_data$pval < 0.05 & abs(volcano_data$log2FC) > 1, "Yes", "No")
+
+# Plot volcano with labeled top 5 genes
+
+# Select only numeric expression columns, excluding metadata and PCA 
+expr_cols <- data %>%
+  select(where(is.numeric)) %>%
+  select(-c(age_at_diagnosis, tumor_size, overall_survival, overall_survival_months,
+            PC1, PC2, PC3, PC4, PC5))  # adjust if you have more PCA columns
+
+# Split data into Alive and Deceased 
+alive <- data %>% filter(death_from_cancer == "NO") %>% select(all_of(colnames(expr_cols)))
+deceased <- data %>% filter(death_from_cancer == "YES") %>% select(all_of(colnames(expr_cols)))
+
+# Compute log2FC and p-values 
+volcano_data <- data.frame(Gene = colnames(expr_cols))
+volcano_data$log2FC <- sapply(colnames(expr_cols), function(gene) {
+  log2(mean(deceased[[gene]], na.rm = TRUE) + 1) - log2(mean(alive[[gene]], na.rm = TRUE) + 1)
+})
+volcano_data$pval <- sapply(colnames(expr_cols), function(gene) {
+  t.test(deceased[[gene]], alive[[gene]])$p.value
+})
+volcano_data$neglog10pval <- -log10(volcano_data$pval)
+volcano_data$significant <- with(volcano_data, ifelse(pval < 0.05 & abs(log2FC) > 1, "Yes", "No"))
+
+# Label Top 5 genes by highest |log2FC| (even if not significant)
+top_genes <- volcano_data %>% 
+  arrange(desc(abs(log2FC))) %>%
+  slice_head(n = 5)
+
+# Final Plot 
+ggplot(volcano_data, aes(x = log2FC, y = neglog10pval, color = significant)) +
+  geom_point(alpha = 0.7) +
+  geom_text_repel(data = top_genes, aes(label = Gene), size = 4, max.overlaps = 10) +
+  scale_color_manual(values = c("Yes" = "red", "No" = "gray")) +
+  labs(
+    title = "Volcano Plot of Differential Gene Expression",
+    x = "log2(Fold Change)", y = "-log10(p-value)"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+
+# 11. HEATMAP OF TOP GENES 
+top_genes_20 <- volcano_data %>% arrange(desc(abs(log2FC))) %>% slice_head(n = 20) %>% pull(Gene)
+heatmap_expr <- data %>% select(all_of(top_genes_20)) %>% as.matrix()
+annotation_row <- data.frame(Status = data$death_from_cancer)
+rownames(annotation_row) <- rownames(data)
+pheatmap(t(heatmap_expr), annotation_col = annotation_row, cluster_rows = TRUE, cluster_cols = TRUE,
+         show_colnames = FALSE, scale = "row", main = "Top 20 Differentially Expressed Genes")
+
+
+# 12. UPSET PLOT 
+mutation_cols <- names(data)[str_detect(names(data), "mut") & !str_detect(names(data), "PC")]
+mutation_matrix <- data %>%
+  select(all_of(mutation_cols)) %>%
+  mutate(across(everything(), ~ ifelse(. != "0" & !is.na(.), 1, 0))) %>%
+  mutate(patient = row_number())
+mutation_long <- pivot_longer(mutation_matrix, -patient, names_to = "gene", values_to = "mutated")
+upset_data <- pivot_wider(mutation_long, names_from = gene, values_from = mutated, values_fill = 0)
+upset(upset_data, intersect = mutation_cols, name = "Mutated Genes", min_size = 5,
+      width_ratio = 0.2, base_annotations = list('Intersection size' = intersection_size()))
+```
+
+
+
+
