@@ -1,0 +1,65 @@
+```{r}
+```{r}
+# preprocessing
+
+# 01. LOAD LIBRARIES 
+# Load all necessary libraries for data wrangling, modeling, and visualization
+library(tidyverse)
+library(caret)
+library(ranger)
+library(pROC)
+library(FactoMineR)
+library(factoextra)
+library(DMwR)
+library(xgboost)
+library(survival)
+library(survminer)
+library(pheatmap)
+library(ggrepel)
+library(ComplexUpset)
+
+
+# ===================== 02. LOAD & CLEAN DATA =====================
+# Load METABRIC data
+raw_data <- read.csv("C:/Users/deepa/Downloads/archive/METABRIC_RNA_Mutation.csv")
+data <- raw_data
+
+# Create binary outcome variable based on survival status
+data$death_from_cancer <- factor(ifelse(data$overall_survival == 0, "YES", "NO"), levels = c("NO", "YES"))
+
+# Create binary mutation label for TP53
+data$tp53_mut_binary <- factor(ifelse(data$tp53_mut != "0" & data$tp53_mut != 0, "Mutated", "Not Mutated"))
+
+# Convert treatments to factors
+data <- data %>% mutate(
+  chemotherapy = factor(ifelse(chemotherapy == 1, "Received", "Not Received")),
+  hormone_therapy = factor(ifelse(hormone_therapy == 1, "Received", "Not Received")),
+  radio_therapy = factor(ifelse(radio_therapy == 1, "Received", "Not Received"))
+)
+
+# Remove columns with >30% missing values
+threshold <- 0.3 * nrow(data)
+data <- data[, colSums(is.na(data)) < threshold]
+
+# Impute missing values
+getmode <- function(v) unique(v[which.max(tabulate(match(v, v)))])
+data <- data %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
+  mutate(across(where(is.character), ~ factor(ifelse(is.na(.), getmode(.), .))))
+
+
+# 03. PCA ON GENE EXPRESSION 
+# Perform PCA to reduce dimensionality of gene expression data
+expr_cols <- setdiff(names(data), c("patient_id", "overall_survival", "overall_survival_months", "death_from_cancer"))
+expr_data <- data[, expr_cols] %>% select(where(is.numeric))
+expr_data_scaled <- scale(expr_data)
+pca_res <- PCA(as.data.frame(expr_data_scaled), graph = FALSE)
+pca_scores <- as.data.frame(pca_res$ind$coord[, 1:5])
+colnames(pca_scores) <- paste0("PC", 1:5)
+data <- bind_cols(data, pca_scores)
+
+```
+
+
+```
+

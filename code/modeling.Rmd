@@ -1,0 +1,61 @@
+```{r}
+# 04. MODELING PREPARATION
+# Select modeling variables
+model_vars <- c("death_from_cancer", "age_at_diagnosis", "tumor_stage", "chemotherapy",
+                "hormone_therapy", "radio_therapy", "tumor_size", "tp53_mut_binary", "PC1", "PC2")
+rf_data <- data[, model_vars] %>% drop_na()
+
+# Apply SMOTE to handle class imbalance
+set.seed(42)
+rf_data_balanced <- SMOTE(death_from_cancer ~ ., data = rf_data, perc.over = 100, perc.under = 150)
+
+# Train-test split
+train_index <- createDataPartition(rf_data_balanced$death_from_cancer, p = 0.8, list = FALSE)
+train_data <- rf_data_balanced[train_index, ]
+test_data <- rf_data_balanced[-train_index, ]
+
+
+# 05. MODEL TRAINING & EVALUATION 
+# Logistic Regression
+log_model <- glm(death_from_cancer ~ ., data = train_data, family = "binomial")
+test_data$tp53_mut_binary <- factor(test_data$tp53_mut_binary, levels = levels(train_data$tp53_mut_binary))
+log_preds_prob <- predict(log_model, newdata = test_data, type = "response")
+log_preds <- factor(ifelse(log_preds_prob > 0.5, "YES", "NO"), levels = c("NO", "YES"))
+roc_log <- roc(test_data$death_from_cancer, log_preds_prob)
+# Logistic Regression Confusion Matrix
+cat("Confusion Matrix: Logistic Regression\n")
+print(confusionMatrix(log_preds, test_data$death_from_cancer))
+
+
+# Random Forest
+rf_model <- ranger(death_from_cancer ~ ., data = train_data, num.trees = 500, probability = TRUE, importance = "permutation")
+rf_preds_prob <- predict(rf_model, data = test_data)$predictions[, "YES"]
+rf_preds <- factor(ifelse(rf_preds_prob > 0.5, "YES", "NO"), levels = c("NO", "YES"))
+roc_rf <- roc(test_data$death_from_cancer, rf_preds_prob)
+# Random Forest Confusion Matrix
+cat("Confusion Matrix: Random Forest\n")
+print(confusionMatrix(rf_preds, test_data$death_from_cancer))
+
+
+# XGBoost
+xgb_train <- xgb.DMatrix(data = model.matrix(death_from_cancer ~ . - 1, data = train_data), label = as.numeric(train_data$death_from_cancer) - 1)
+xgb_test <- xgb.DMatrix(data = model.matrix(death_from_cancer ~ . - 1, data = test_data))
+xgb_model <- xgboost(data = xgb_train, nrounds = 100, objective = "binary:logistic", verbose = 0)
+xgb_preds_prob <- predict(xgb_model, newdata = xgb_test)
+xgb_preds <- factor(ifelse(xgb_preds_prob > 0.5, "YES", "NO"), levels = c("NO", "YES"))
+roc_xgb <- roc(test_data$death_from_cancer, xgb_preds_prob)
+# XGBoost Confusion Matrix
+cat("Confusion Matrix: XGBoost\n")
+print(confusionMatrix(xgb_preds, test_data$death_from_cancer))
+
+
+# AUC Summary Table
+auc_df <- data.frame(
+  Model = c("Logistic Regression", "Random Forest", "XGBoost"),
+  AUC = c(auc(roc_log), auc(roc_rf), auc(roc_xgb))
+)
+cat("Model AUC Comparison Table:\n")
+print(auc_df)
+
+```
+
