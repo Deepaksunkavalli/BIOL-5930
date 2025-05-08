@@ -5,7 +5,7 @@ This project performs an integrative analysis of clinical, gene expression, and 
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 /project_root/
@@ -25,7 +25,7 @@ This project performs an integrative analysis of clinical, gene expression, and 
 
 ---
 
-## 📊 Project Objectives
+##  Project Objectives
 
 - Harmonize clinical and omics data from the METABRIC dataset.
 - Apply PCA to reduce dimensionality of gene expression data.
@@ -35,7 +35,7 @@ This project performs an integrative analysis of clinical, gene expression, and 
 
 ---
 
-## 🔬 Dataset
+## Dataset
 
 - **Source**: [Kaggle - METABRIC Dataset](https://www.kaggle.com/datasets/raghadalharbi/breast-cancer-gene-expression-profiles-metabric)
 - **Size**: 1980 samples
@@ -43,7 +43,7 @@ This project performs an integrative analysis of clinical, gene expression, and 
 
 ---
 
-## ⚙️ Methodology
+##  Methodology
 
 - **Preprocessing**:
   - Columns with >30% missing values removed.
@@ -66,7 +66,7 @@ This project performs an integrative analysis of clinical, gene expression, and 
 
 ---
 
-## 📈 Visualizations
+## Visualizations
 
 - Bar plots of death outcome by therapy type
 - Boxplots for PC1, tumor size, and age
@@ -81,7 +81,7 @@ All visualizations are saved in `/plots/` and referenced in the written report.
 
 ---
 
-## 🧠 Key Findings
+##  Key Findings
 
 - PCA scores (PC1, PC2), tumor size, and TP53 mutation were strong predictors.
 - Random Forest and XGBoost significantly outperformed logistic regression.
@@ -89,7 +89,7 @@ All visualizations are saved in `/plots/` and referenced in the written report.
 
 ---
 
-## 📄 Final Report
+##  Final Report
 
 A full journal-style report (`METABRIC_Final_Report_Deepak.docx`) is available upon request or in the course submission. It includes:
 
@@ -99,7 +99,7 @@ A full journal-style report (`METABRIC_Final_Report_Deepak.docx`) is available u
 
 ---
 
-## 👨‍💻 Author
+##  Author
 
 **Deepak Sunkavalli**  
 Master's Student, Bioinformatics & Computational Biology  
@@ -107,12 +107,12 @@ Saint Louis University, May 2025
 
 ---
 
-## 📬 Contact
+## Contact
 
-For questions, please reach out via [GitHub Issues](https://github.com/Deepaksunkavalli/BIOL-5930/issues) or email at deepak.bioinformatics@slu.edu.
+For questions, please reach out via [GitHub Issues](https://github.com/Deepaksunkavalli/BIOL-5930/issues) 
 
 ---
 
-## 📜 License
+## License
 
 This project is for educational use only. Dataset courtesy of METABRIC Consortium via Kaggle.
