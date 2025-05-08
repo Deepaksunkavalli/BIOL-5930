@@ -1,0 +1,88 @@
+Confusion Matrix: Logistic Regression
+Confusion Matrix and Statistics
+
+          Reference
+Prediction  NO YES
+       NO  257 104
+       YES  63 136
+                                         
+               Accuracy : 0.7018         
+                 95% CI : (0.662, 0.7394)
+    No Information Rate : 0.5714         
+    P-Value [Acc > NIR] : 1.417e-10      
+                                         
+                  Kappa : 0.3779         
+                                         
+ Mcnemar's Test P-Value : 0.001966       
+                                         
+            Sensitivity : 0.8031         
+            Specificity : 0.5667         
+         Pos Pred Value : 0.7119         
+         Neg Pred Value : 0.6834         
+             Prevalence : 0.5714         
+         Detection Rate : 0.4589         
+   Detection Prevalence : 0.6446         
+      Balanced Accuracy : 0.6849         
+                                         
+       'Positive' Class : NO             
+                                         
+
+
+Confusion Matrix: Random Forest
+Confusion Matrix and Statistics
+
+          Reference
+Prediction  NO YES
+       NO  276  50
+       YES  44 190
+                                          
+               Accuracy : 0.8321          
+                 95% CI : (0.7986, 0.8622)
+    No Information Rate : 0.5714          
+    P-Value [Acc > NIR] : <2e-16          
+                                          
+                  Kappa : 0.6562          
+                                          
+ Mcnemar's Test P-Value : 0.6061          
+                                          
+            Sensitivity : 0.8625          
+            Specificity : 0.7917          
+         Pos Pred Value : 0.8466          
+         Neg Pred Value : 0.8120          
+             Prevalence : 0.5714          
+         Detection Rate : 0.4929          
+   Detection Prevalence : 0.5821          
+      Balanced Accuracy : 0.8271          
+                                          
+       'Positive' Class : NO              
+                                          
+
+
+Confusion Matrix: XGBoost
+Confusion Matrix and Statistics
+
+          Reference
+Prediction  NO YES
+       NO  271  44
+       YES  49 196
+                                          
+               Accuracy : 0.8339          
+                 95% CI : (0.8005, 0.8638)
+    No Information Rate : 0.5714          
+    P-Value [Acc > NIR] : <2e-16          
+                                          
+                  Kappa : 0.6618          
+                                          
+ Mcnemar's Test P-Value : 0.6783          
+                                          
+            Sensitivity : 0.8469          
+            Specificity : 0.8167          
+         Pos Pred Value : 0.8603          
+         Neg Pred Value : 0.8000          
+             Prevalence : 0.5714          
+         Detection Rate : 0.4839          
+   Detection Prevalence : 0.5625          
+      Balanced Accuracy : 0.8318          
+                                          
+       'Positive' Class : NO              
+                                          
